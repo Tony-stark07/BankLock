@@ -141,7 +141,7 @@ export default function HomeScreen() {
       <Modal visible={setupModalVisible} transparent animationType="fade">
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
-            <ThemedText type="title" style={styles.modalTitle}>
+            <ThemedText type="title" style={[styles.modalTitle, { color: '#000' }]}>
               💰 Budget Setup
             </ThemedText>
             <ThemedText style={styles.modalSubtitle}>
