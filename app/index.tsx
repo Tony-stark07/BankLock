@@ -13,6 +13,7 @@ import {
   ScrollView,
   Animated,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { HelloWave } from './components/hello-wave';
 import ParallaxScrollView from './components/parallax-scroll-view';
@@ -40,10 +41,56 @@ export default function HomeScreen() {
   const [categoryPickerVisible, setCategoryPickerVisible] = useState(false);
   const [budgetExceededShown, setBudgetExceededShown] = useState(false);
   const [pendingTransaction, setPendingTransaction] = useState<Transaction | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'main' | 'analytics'>('main');
 
   const totalSpending = transactions.reduce((sum, t) => sum + t.amount, 0);
   const remaining = budget ? budget - totalSpending : 0;
   const percentageUsed = budget ? (totalSpending / budget) * 100 : 0;
+
+  // Load data from AsyncStorage when component mounts
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const savedBudget = await AsyncStorage.getItem('budget');
+        const savedTransactions = await AsyncStorage.getItem('transactions');
+        
+        if (savedBudget !== null) {
+          const budgetAmount = parseFloat(savedBudget);
+          setBudget(budgetAmount);
+          setSetupModalVisible(false);
+        }
+        
+        if (savedTransactions !== null) {
+          setTransactions(JSON.parse(savedTransactions));
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // Save budget to AsyncStorage whenever it changes
+  useEffect(() => {
+    if (budget !== null) {
+      AsyncStorage.setItem('budget', budget.toString()).catch(error => {
+        console.error('Error saving budget:', error);
+      });
+    }
+  }, [budget]);
+
+  // Save transactions to AsyncStorage whenever they change
+  useEffect(() => {
+    if (transactions.length > 0) {
+      AsyncStorage.setItem('transactions', JSON.stringify(transactions)).catch(error => {
+        console.error('Error saving transactions:', error);
+      });
+    }
+  }, [transactions]);
 
   // Check if budget is exceeded
   useEffect(() => {
@@ -58,6 +105,19 @@ export default function HomeScreen() {
       setBudgetExceededShown(false);
     }
   }, [totalSpending, budget, budgetExceededShown]);
+
+  // Calculate spending by category
+  const getSpendingByCategory = () => {
+    const categoryMap: { [key: string]: number } = {};
+    transactions.forEach(transaction => {
+      if (categoryMap[transaction.category]) {
+        categoryMap[transaction.category] += transaction.amount;
+      } else {
+        categoryMap[transaction.category] = transaction.amount;
+      }
+    });
+    return categoryMap;
+  };
 
   const handleSetBudget = () => {
     const budgetAmount = parseFloat(budgetInput);
@@ -182,7 +242,157 @@ export default function HomeScreen() {
         <HelloWave />
       </ThemedView>
 
-      {/* Budget Summary Card */}
+      {/* View Toggle Buttons */}
+      <View style={styles.viewToggleContainer}>
+        <Pressable
+          style={[
+            styles.viewToggleButton,
+            viewMode === 'main' && styles.viewToggleButtonActive,
+          ]}
+          onPress={() => setViewMode('main')}
+        >
+          <ThemedText
+            style={[
+              styles.viewToggleButtonText,
+              viewMode === 'main' && styles.viewToggleButtonTextActive,
+            ]}
+          >
+            Overview
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.viewToggleButton,
+            viewMode === 'analytics' && styles.viewToggleButtonActive,
+          ]}
+          onPress={() => setViewMode('analytics')}
+        >
+          <ThemedText
+            style={[
+              styles.viewToggleButtonText,
+              viewMode === 'analytics' && styles.viewToggleButtonTextActive,
+            ]}
+          >
+            Analytics
+          </ThemedText>
+        </Pressable>
+      </View>
+
+      {/* Analytics View */}
+      {viewMode === 'analytics' && (
+        <ThemedView style={styles.analyticsContainer}>
+          <ThemedText type="subtitle" style={{ color: '#000', marginBottom: 20 }}>
+            Spending Analysis
+          </ThemedText>
+
+          {transactions.length > 0 ? (
+            <>
+              {/* Category Spending Chart */}
+              <ThemedView style={styles.chartCard}>
+                <ThemedText style={[styles.chartTitle, { color: '#000' }]}>
+                  Spending by Category
+                </ThemedText>
+                <View style={styles.pieChartContainer}>
+                  {Object.entries(getSpendingByCategory()).map(([category, amount], index) => {
+                    const colors = ['#FF6B6B', '#4CAF50', '#FFA500', '#007AFF', '#9C27B0', '#00BCD4', '#FF9800', '#795548'];
+                    const maxAmount = Math.max(...Object.values(getSpendingByCategory()) as number[]);
+                    const percentage = ((amount as number) / maxAmount) * 100;
+                    return (
+                      <View key={category} style={styles.categoryChartItem}>
+                        <ThemedText style={styles.categoryChartLabel}>{category}</ThemedText>
+                        <View style={styles.categoryChartBarContainer}>
+                          <View
+                            style={[
+                              styles.categoryChartBar,
+                              {
+                                width: `${percentage}%`,
+                                backgroundColor: colors[index % colors.length],
+                              },
+                            ]}
+                          />
+                        </View>
+                        <ThemedText style={styles.categoryChartAmount}>
+                          ${(amount as number).toFixed(2)}
+                        </ThemedText>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ThemedView>
+
+              {/* Comparison Bar Chart */}
+              <ThemedView style={styles.chartCard}>
+                <ThemedText style={[styles.chartTitle, { color: '#000' }]}>
+                  Budget vs Spent
+                </ThemedText>
+                <View style={styles.barChartContainer}>
+                  <View style={styles.comparisonItem}>
+                    <ThemedText style={styles.comparisonLabel}>Budget</ThemedText>
+                    <View style={styles.comparisonBarContainer}>
+                      <View
+                        style={[
+                          styles.comparisonBar,
+                          {
+                            width: '100%',
+                            backgroundColor: '#4CAF50',
+                          },
+                        ]}
+                      />
+                    </View>
+                    <ThemedText style={styles.comparisonAmount}>
+                      ${budget?.toFixed(2)}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.comparisonItem}>
+                    <ThemedText style={styles.comparisonLabel}>Spent</ThemedText>
+                    <View style={styles.comparisonBarContainer}>
+                      <View
+                        style={[
+                          styles.comparisonBar,
+                          {
+                            width: `${Math.min((totalSpending / budget!) * 100, 100)}%`,
+                            backgroundColor: totalSpending >= budget! ? '#FF6B6B' : '#FFA500',
+                          },
+                        ]}
+                      />
+                    </View>
+                    <ThemedText style={styles.comparisonAmount}>
+                      ${totalSpending.toFixed(2)}
+                    </ThemedText>
+                  </View>
+                </View>
+              </ThemedView>
+
+              {/* Category Breakdown */}
+              <ThemedView style={styles.categoryBreakdownCard}>
+                <ThemedText style={[styles.chartTitle, { color: '#000' }]}>
+                  Category Breakdown
+                </ThemedText>
+                {Object.entries(getSpendingByCategory()).map(([category, amount]) => (
+                  <View key={category} style={styles.categoryBreakdownItem}>
+                    <ThemedText style={styles.categoryBreakdownName}>
+                      {category}
+                    </ThemedText>
+                    <ThemedText style={styles.categoryBreakdownAmount}>
+                      ${(amount as number).toFixed(2)}
+                    </ThemedText>
+                  </View>
+                ))}
+              </ThemedView>
+            </>
+          ) : (
+            <ThemedView style={styles.emptyAnalytics}>
+              <ThemedText style={styles.emptyAnalyticsText}>
+                No transactions yet. Add some expenses to see analytics! 📊
+              </ThemedText>
+            </ThemedView>
+          )}
+        </ThemedView>
+      )}
+
+      {/* Main Overview View */}
+      {viewMode === 'main' && (
+        <>
       <ThemedView style={styles.summaryCard}>
         <View style={styles.budgetHeader}>
           <ThemedText type="subtitle" style={{ color: '#000' }}>Budget Overview</ThemedText>
@@ -191,6 +401,9 @@ export default function HomeScreen() {
               setBudget(null);
               setSetupModalVisible(true);
               setTransactions([]);
+              setBudgetExceededShown(false);
+              AsyncStorage.removeItem('budget');
+              AsyncStorage.removeItem('transactions');
             }}
           >
             <ThemedText style={styles.editBudgetText}>Edit</ThemedText>
@@ -200,7 +413,7 @@ export default function HomeScreen() {
         <View style={styles.amountRow}>
           <View>
             <ThemedText style={[styles.label, { color: '#000' }]}>Budget:</ThemedText>
-            <ThemedText style={styles.largeAmount}>${budget.toFixed(2)}</ThemedText>
+            <ThemedText style={[styles.largeAmount, { color: '#000' }]}>${budget.toFixed(2)}</ThemedText>
           </View>
           <View style={styles.divider} />
           <View>
@@ -370,12 +583,14 @@ export default function HomeScreen() {
         </ThemedView>
       )}
 
-      {transactions.length === 0 && budget && (
+      {transactions.length === 0 && budget && viewMode === 'main' && (
         <ThemedView style={styles.emptyState}>
           <ThemedText style={styles.emptyStateText}>
             No expenses yet. Start tracking! 📝
           </ThemedText>
         </ThemedView>
+      )}
+        </>
       )}
     </ParallaxScrollView>
   );
@@ -487,7 +702,6 @@ const styles = StyleSheet.create({
   progressBar: {
     height: '100%',
     borderRadius: 6,
-    transition: 'all 0.3s ease',
   },
   progressText: {
     fontSize: 12,
@@ -625,6 +839,140 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
     textAlign: 'center',
+  },
+  viewToggleContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  viewToggleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 10,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 2,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  viewToggleButtonActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  viewToggleButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  viewToggleButtonTextActive: {
+    color: '#fff',
+  },
+  analyticsContainer: {
+    marginBottom: 20,
+  },
+  chartCard: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 15,
+  },
+  pieChartContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  barChartContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBreakdownCard: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+  },
+  categoryBreakdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomColor: '#e0e0e0',
+    borderBottomWidth: 1,
+  },
+  categoryBreakdownName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#000',
+  },
+  categoryBreakdownAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FF6B6B',
+  },
+  emptyAnalytics: {
+    padding: 40,
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 15,
+  },
+  emptyAnalyticsText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
+  },
+  categoryChartItem: {
+    marginBottom: 20,
+  },
+  categoryChartLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 5,
+    color: '#333',
+  },
+  categoryChartBarContainer: {
+    height: 25,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 5,
+  },
+  categoryChartBar: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  categoryChartAmount: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#666',
+  },
+  comparisonItem: {
+    marginBottom: 20,
+  },
+  comparisonLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 5,
+    color: '#333',
+  },
+  comparisonBarContainer: {
+    height: 35,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  comparisonBar: {
+    height: '100%',
+    borderRadius: 8,
+  },
+  comparisonAmount: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
   },
   reactLogo: {
     height: 178,
