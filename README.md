@@ -1,6 +1,8 @@
 Smart Bank Presentation:
 https://docs.google.com/presentation/d/156ZG9OaT1Mt9uKAwnFu1UBuuBFT1sTyKmOnc2eyl-r4/edit?usp=sharing
 
+Description: Our app lets users set and edit category-based budgets, track spending through a dashboard with remaining balance, financial health score, and category breakdowns, and record transactions with real-time validation. It blocks overspending (with essential overrides), stores transaction history, supports secure login, and plans to add smart budget alerts.
+
 # Welcome to our Smart Bank app 👋
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
