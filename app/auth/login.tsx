@@ -1,17 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TextInput, Pressable, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { useColorScheme } from '../hooks/use-color-scheme';
-import { Link, useRouter } from 'expo-router';
+import { Link, useRouter, useLocalSearchParams } from 'expo-router';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const searchParams = useLocalSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hasShownAlert, setHasShownAlert] = useState(false);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Show signup success message ONCE if coming from signup
+  useEffect(() => {
+    if (searchParams.signupSuccess === 'true' && !hasShownAlert) {
+      setHasShownAlert(true);
+      Alert.alert('✅ Signup Successful!', 'Your account has been created. Please login to continue.');
+    }
+  }, [searchParams.signupSuccess]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -36,7 +46,7 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#1D1D1D' : '#fff' }]}>
-      <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>💰 BankLock</Text>
+      <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>💰 Smart Bank</Text>
       <Text style={[styles.subtitle, { color: isDark ? '#ccc' : '#666' }]}>Login to your account</Text>
 
       <TextInput

@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   Alert,
   Button,
@@ -175,17 +175,23 @@ export default function HomeScreen() {
     const budgetAmount = parseFloat(budgetInput);
     if (!isNaN(budgetAmount) && budgetAmount > 0) {
       try {
-        await saveBudgetToFirestore({
-          budget: budgetAmount,
-          transactions: [],
-          categoryLimits: {},
-        });
+        // Update UI immediately for faster response
         setBudget(budgetAmount);
         setSetupModalVisible(false);
         setBudgetInput('');
+        
+        // Save to Firestore in background (don't await)
+        saveBudgetToFirestore({
+          budget: budgetAmount,
+          transactions: [],
+          categoryLimits: {},
+        }).catch(error => {
+          console.error('Error saving budget:', error);
+          Alert.alert('Sync Error', 'Failed to save budget to cloud. Please try again.');
+        });
       } catch (error) {
-        Alert.alert('Error', 'Failed to save budget. Please try again.');
-        console.error('Error saving budget:', error);
+        Alert.alert('Error', 'Failed to set budget. Please try again.');
+        console.error('Error setting budget:', error);
       }
     } else {
       Alert.alert('Invalid Input', 'Please enter a valid budget amount');

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "BankLock",
-    "slug": "banklock",
+    "name": "Smart Bank",
+    "slug": "smartbank",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/money-tracker-logo.jpg",
-    "scheme": "banklock",
+    "scheme": "smartbank",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

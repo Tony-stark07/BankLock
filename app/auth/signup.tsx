@@ -34,9 +34,12 @@ export default function SignupScreen() {
     try {
       console.log('Attempting signup with:', email);
       await createUserWithEmailAndPassword(auth, email, password);
-      console.log('Signup successful, navigating to app...');
-      // Navigate to main app
-      router.replace('/');
+      console.log('Signup successful, navigating to login...');
+      // Navigate to login with success param
+      router.replace({
+        pathname: '/auth/login',
+        params: { signupSuccess: 'true' }
+      });
     } catch (error: any) {
       console.log('Full error:', error);
       console.log('Error code:', error.code);
@@ -49,7 +52,7 @@ export default function SignupScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#1D1D1D' : '#fff' }]}>
-      <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>💰 BankLock</Text>
+      <Text style={[styles.title, { color: isDark ? '#fff' : '#000' }]}>💰 Smart Bank</Text>
       <Text style={[styles.subtitle, { color: isDark ? '#ccc' : '#666' }]}>Create your account</Text>
 
       <TextInput
