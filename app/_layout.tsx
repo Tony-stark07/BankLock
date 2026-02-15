@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { ActivityIndicator, View } from 'react-native';
+import { Image } from 'expo-image';
 
 import { useColorScheme } from './hooks/use-color-scheme';
 import { AuthProvider, useAuth } from './context/authContext';
@@ -13,7 +14,19 @@ function RootLayoutNav() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colorScheme === 'dark' ? '#1D1D1D' : '#fff' }}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: colorScheme === 'dark' ? '#1D1D1D' : '#fff',
+        }}
+      >
+        <Image
+          source={require('../assets/images/money-tracker-logo.jpg')}
+          style={{ width: 140, height: 140, marginBottom: 12 }}
+          contentFit="contain"
+        />
         <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
