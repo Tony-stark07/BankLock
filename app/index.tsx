@@ -807,7 +807,7 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.categoryLimitEditControls}>
                     <TextInput
-                      style={[styles.input, { width: 100 }]}
+                      style={styles.categoryLimitInput}
                       placeholder="Limit"
                       keyboardType="decimal-pad"
                       defaultValue={categoryLimits[category]?.toString() || ''}
@@ -1281,19 +1281,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     borderColor: '#e0e0e0',
     borderWidth: 1,
   },
   categoryLimitEditInfo: {
-    flex: 1,
+    marginBottom: 10,
   },
   categoryLimitEditName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    marginBottom: 3,
+    marginBottom: 5,
   },
   categoryLimitEditCurrent: {
     fontSize: 12,
@@ -1303,6 +1301,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'center',
+  },
+  categoryLimitInput: {
+    width: 100,
+    height: 40,
+    borderColor: '#ddd',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    backgroundColor: '#fff',
+    color: '#000',
   },
   categoryLimitSetButton: {
     backgroundColor: '#4CAF50',
