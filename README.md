@@ -1,4 +1,7 @@
-# Welcome to your our Smart Banl app 👋
+Smart Bank Presentation:
+https://docs.google.com/presentation/d/156ZG9OaT1Mt9uKAwnFu1UBuuBFT1sTyKmOnc2eyl-r4/edit?usp=sharing
+
+# Welcome to our Smart Bank app 👋
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
