@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import {
   Alert,
   Button,
@@ -12,13 +13,15 @@ import {
   Text,
   ScrollView,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { HelloWave } from './components/hello-wave';
 import ParallaxScrollView from './components/parallax-scroll-view';
 import { ThemedText } from './components/themed-text';
 import { ThemedView } from './components/themed-view';
+import { useAuth } from './context/authContext';
+import { saveBudgetToFirestore, loadBudgetFromFirestore, updateBudgetInFirestore } from './services/firestoreService';
 
 interface Transaction {
   id: string;
@@ -31,6 +34,8 @@ interface Transaction {
 const ALLOWED_OVER_BUDGET_CATEGORIES = ['Health', 'Medical', 'Emergency', 'Essential'];
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const { user, loading, logout } = useAuth();
   const [budget, setBudget] = useState<number | null>(null);
   const [setupModalVisible, setSetupModalVisible] = useState(true);
   const [budgetInput, setBudgetInput] = useState('');
@@ -43,54 +48,101 @@ export default function HomeScreen() {
   const [pendingTransaction, setPendingTransaction] = useState<Transaction | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'main' | 'analytics'>('main');
+  const [categoryLimits, setCategoryLimits] = useState<{ [key: string]: number }>({});
+  const [categoryLimitsModalVisible, setCategoryLimitsModalVisible] = useState(false);
+  const [editingCategoryLimit, setEditingCategoryLimit] = useState<{ category: string; limit: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  // Redirect to login if user is not authenticated
+  useEffect(() => {
+    console.log('Auth check - user:', user ? user.uid : 'null', 'loading:', loading);
+    if (!loading && !user) {
+      console.log('Not authenticated, redirecting to login...');
+      router.replace('/auth/login');
+    } else if (!loading && user) {
+      console.log('User authenticated, showing app...');
+    }
+  }, [user, loading, router]);
 
   const totalSpending = transactions.reduce((sum, t) => sum + t.amount, 0);
   const remaining = budget ? budget - totalSpending : 0;
   const percentageUsed = budget ? (totalSpending / budget) * 100 : 0;
 
-  // Load data from AsyncStorage when component mounts
+  // Load data from Firestore when component mounts
   useEffect(() => {
     const loadData = async () => {
+      if (!user) return;
+      
       try {
-        const savedBudget = await AsyncStorage.getItem('budget');
-        const savedTransactions = await AsyncStorage.getItem('transactions');
+        const budgetData = await loadBudgetFromFirestore();
         
-        if (savedBudget !== null) {
-          const budgetAmount = parseFloat(savedBudget);
-          setBudget(budgetAmount);
+        if (budgetData) {
+          setBudget(budgetData.budget);
+          setTransactions(budgetData.transactions || []);
+          setCategoryLimits(budgetData.categoryLimits || {});
           setSetupModalVisible(false);
         }
-        
-        if (savedTransactions !== null) {
-          setTransactions(JSON.parse(savedTransactions));
-        }
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('Error loading data from Firestore:', error);
+        Alert.alert('Sync Error', 'Failed to load your data. Please try again.');
       } finally {
         setIsLoading(false);
       }
     };
 
     loadData();
-  }, []);
+  }, [user]);
 
-  // Save budget to AsyncStorage whenever it changes
+  // Save budget to Firestore when it changes
   useEffect(() => {
-    if (budget !== null) {
-      AsyncStorage.setItem('budget', budget.toString()).catch(error => {
-        console.error('Error saving budget:', error);
-      });
+    if (budget !== null && !syncing) {
+      const saveData = async () => {
+        setSyncing(true);
+        try {
+          await updateBudgetInFirestore({ budget });
+        } catch (error) {
+          console.error('Error saving budget:', error);
+        } finally {
+          setSyncing(false);
+        }
+      };
+      saveData();
     }
-  }, [budget]);
+  }, [budget, syncing]);
 
-  // Save transactions to AsyncStorage whenever they change
+  // Save transactions to Firestore whenever they change
   useEffect(() => {
-    if (transactions.length > 0) {
-      AsyncStorage.setItem('transactions', JSON.stringify(transactions)).catch(error => {
-        console.error('Error saving transactions:', error);
-      });
+    if (budget !== null && !syncing) {
+      const saveData = async () => {
+        setSyncing(true);
+        try {
+          await updateBudgetInFirestore({ transactions });
+        } catch (error) {
+          console.error('Error saving transactions:', error);
+        } finally {
+          setSyncing(false);
+        }
+      };
+      saveData();
     }
   }, [transactions]);
+
+  // Save category limits to Firestore
+  useEffect(() => {
+    if (budget !== null && !syncing) {
+      const saveData = async () => {
+        setSyncing(true);
+        try {
+          await updateBudgetInFirestore({ categoryLimits });
+        } catch (error) {
+          console.error('Error saving category limits:', error);
+        } finally {
+          setSyncing(false);
+        }
+      };
+      saveData();
+    }
+  }, [categoryLimits, syncing]);
 
   // Check if budget is exceeded
   useEffect(() => {
@@ -119,12 +171,22 @@ export default function HomeScreen() {
     return categoryMap;
   };
 
-  const handleSetBudget = () => {
+  const handleSetBudget = async () => {
     const budgetAmount = parseFloat(budgetInput);
     if (!isNaN(budgetAmount) && budgetAmount > 0) {
-      setBudget(budgetAmount);
-      setSetupModalVisible(false);
-      setBudgetInput('');
+      try {
+        await saveBudgetToFirestore({
+          budget: budgetAmount,
+          transactions: [],
+          categoryLimits: {},
+        });
+        setBudget(budgetAmount);
+        setSetupModalVisible(false);
+        setBudgetInput('');
+      } catch (error) {
+        Alert.alert('Error', 'Failed to save budget. Please try again.');
+        console.error('Error saving budget:', error);
+      }
     } else {
       Alert.alert('Invalid Input', 'Please enter a valid budget amount');
     }
@@ -152,6 +214,36 @@ export default function HomeScreen() {
 
     const totalAfterTransaction = totalSpending + amount;
     const willExceedBudget = totalAfterTransaction > budget!;
+
+    // Check category limit
+    const categorySpending = transactions
+      .filter(t => t.category === selectedCategory)
+      .reduce((sum, t) => sum + t.amount, 0);
+    const categoryLimit = categoryLimits[selectedCategory];
+    const willExceedCategoryLimit = categoryLimit && categorySpending + amount > categoryLimit;
+
+    if (willExceedCategoryLimit) {
+      // Warn about category limit
+      Alert.alert(
+        '⚠️ Category Limit Alert',
+        `This expense of $${amount.toFixed(2)} will exceed your ${selectedCategory} category limit of $${categoryLimit?.toFixed(2)}. You've already spent $${categorySpending.toFixed(2)} in this category.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Proceed Anyway', 
+            style: 'destructive', 
+            onPress: () => {
+              // Add transaction after confirming to exceed category limit
+              setTransactions([newTransaction, ...transactions]);
+              setDescriptionInput('');
+              setAmountInput('');
+              setSelectedCategory('Other');
+            }
+          },
+        ]
+      );
+      return;
+    }
 
     if (willExceedBudget && ALLOWED_OVER_BUDGET_CATEGORIES.includes(selectedCategory)) {
       // Show confirmation alert for allowed categories
@@ -196,6 +288,42 @@ export default function HomeScreen() {
     setTransactions(transactions.filter(t => t.id !== id));
   };
 
+  const handleSetCategoryLimit = () => {
+    if (editingCategoryLimit) {
+      const limit = parseFloat(editingCategoryLimit.limit);
+      if (!isNaN(limit) && limit > 0) {
+        const newLimits = {
+          ...categoryLimits,
+          [editingCategoryLimit.category]: limit,
+        };
+        setCategoryLimits(newLimits);
+        setEditingCategoryLimit(null);
+      } else {
+        Alert.alert('Invalid Input', 'Please enter a valid limit amount');
+      }
+    }
+  };
+
+  const handleDeleteCategoryLimit = (category: string) => {
+    const newLimits = { ...categoryLimits };
+    delete newLimits[category];
+    setCategoryLimits(newLimits);
+  };
+
+  // Show loading screen while checking authentication
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  // This should never happen as router.replace happens in useEffect, but as a fallback:
+  if (!user) {
+    return null;
+  }
+
   if (budget === null) {
     return (
       <Modal visible={setupModalVisible} transparent animationType="fade">
@@ -228,11 +356,12 @@ export default function HomeScreen() {
   }
 
   return (
+    <>
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
       headerImage={
         <Image
-          source={require('../assets/images/partial-react-logo.png')}
+          source={require('../assets/images/money-tracker-logo.jpg')}
           style={styles.reactLogo}
         />
       }
@@ -281,7 +410,7 @@ export default function HomeScreen() {
       {/* Analytics View */}
       {viewMode === 'analytics' && (
         <ThemedView style={styles.analyticsContainer}>
-          <ThemedText type="subtitle" style={{ color: '#000', marginBottom: 20 }}>
+          <ThemedText type="subtitle" style={{ color: '#fff', marginBottom: 20 }}>
             Spending Analysis
           </ThemedText>
 
@@ -390,23 +519,23 @@ export default function HomeScreen() {
         </ThemedView>
       )}
 
-      {/* Main Overview View */}
-      {viewMode === 'main' && (
+      {isLoading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      ) : (
         <>
       <ThemedView style={styles.summaryCard}>
         <View style={styles.budgetHeader}>
           <ThemedText type="subtitle" style={{ color: '#000' }}>Budget Overview</ThemedText>
           <Pressable
             onPress={() => {
-              setBudget(null);
-              setSetupModalVisible(true);
-              setTransactions([]);
-              setBudgetExceededShown(false);
-              AsyncStorage.removeItem('budget');
-              AsyncStorage.removeItem('transactions');
+              logout().catch(error => {
+                Alert.alert('Logout Error', error.message);
+              });
             }}
           >
-            <ThemedText style={styles.editBudgetText}>Edit</ThemedText>
+            <ThemedText style={styles.editBudgetText}>Logout</ThemedText>
           </Pressable>
         </View>
 
@@ -456,6 +585,56 @@ export default function HomeScreen() {
         <ThemedText style={styles.progressText}>
           {percentageUsed.toFixed(0)}% of budget used
         </ThemedText>
+      </ThemedView>
+
+      {/* Category Limits Card */}
+      <ThemedView style={styles.categoryLimitsCard}>
+        <View style={styles.categoryLimitsHeader}>
+          <ThemedText type="subtitle" style={{ color: '#000' }}>Category Limits</ThemedText>
+          <Pressable onPress={() => setCategoryLimitsModalVisible(true)}>
+            <ThemedText style={styles.editBudgetText}>Manage</ThemedText>
+          </Pressable>
+        </View>
+        {Object.keys(categoryLimits).length > 0 ? (
+          <FlatList
+            data={Object.entries(categoryLimits)}
+            keyExtractor={([category]) => category}
+            scrollEnabled={false}
+            renderItem={({ item: [category, limit] }) => {
+              const spending = transactions
+                .filter(t => t.category === category)
+                .reduce((sum, t) => sum + t.amount, 0);
+              const percentage = (spending / limit) * 100;
+              return (
+                <View style={styles.categoryLimitItem}>
+                  <View style={styles.categoryLimitInfo}>
+                    <ThemedText style={[styles.categoryLimitName, { color: '#000' }]}>
+                      {category}
+                    </ThemedText>
+                    <ThemedText style={styles.categoryLimitAmount}>
+                      ${spending.toFixed(2)} / ${limit.toFixed(2)}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.categoryLimitProgressContainer}>
+                    <View
+                      style={[
+                        styles.categoryLimitProgress,
+                        {
+                          width: `${Math.min(percentage, 100)}%`,
+                          backgroundColor: percentage >= 100 ? '#FF6B6B' : percentage >= 75 ? '#FFA500' : '#4CAF50',
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+              );
+            }}
+          />
+        ) : (
+          <ThemedText style={styles.noCategoryLimitsText}>
+            No category limits set. Tap "Manage" to add one.
+          </ThemedText>
+        )}
       </ThemedView>
 
       {/* Add Transaction */}
@@ -593,6 +772,74 @@ export default function HomeScreen() {
         </>
       )}
     </ParallaxScrollView>
+
+      {/* Category Limits Management Modal */}
+      <Modal visible={categoryLimitsModalVisible} transparent animationType="slide">
+        <View style={styles.centeredView}>
+          <View style={[styles.modalView, { height: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="title" style={[styles.modalTitle, { color: '#000' }]}>
+                ⚙️ Category Limits
+              </ThemedText>
+              <Pressable onPress={() => setCategoryLimitsModalVisible(false)}>
+                <ThemedText style={{ fontSize: 24, color: '#007AFF' }}>✕</ThemedText>
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ flex: 1, marginBottom: 20 }}>
+              {['Health', 'Medical', 'Emergency', 'Essential', 'Groceries', 'Entertainment', 'Transport', 'Other'].map((category) => (
+                <View key={category} style={styles.categoryLimitEditItem}>
+                  <View style={styles.categoryLimitEditInfo}>
+                    <ThemedText style={[styles.categoryLimitEditName, { color: '#000' }]}>
+                      {category}
+                    </ThemedText>
+                    {categoryLimits[category] && (
+                      <ThemedText style={styles.categoryLimitEditCurrent}>
+                        Current: ${categoryLimits[category].toFixed(2)}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <View style={styles.categoryLimitEditControls}>
+                    <TextInput
+                      style={[styles.input, { width: 100 }]}
+                      placeholder="Limit"
+                      keyboardType="decimal-pad"
+                      defaultValue={categoryLimits[category]?.toString() || ''}
+                      onChangeText={(text) => setEditingCategoryLimit({ category, limit: text })}
+                      placeholderTextColor="#999"
+                    />
+                    <Pressable
+                      style={styles.categoryLimitSetButton}
+                      onPress={() => {
+                        setEditingCategoryLimit({ category, limit: categoryLimits[category]?.toString() || '' });
+                        handleSetCategoryLimit();
+                      }}
+                    >
+                      <ThemedText style={styles.categoryLimitSetButtonText}>Set</ThemedText>
+                    </Pressable>
+                    {categoryLimits[category] && (
+                      <Pressable
+                        style={styles.categoryLimitDeleteButton}
+                        onPress={() => handleDeleteCategoryLimit(category)}
+                      >
+                        <ThemedText style={styles.categoryLimitDeleteButtonText}>Delete</ThemedText>
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <Pressable
+              style={styles.setupButton}
+              onPress={() => setCategoryLimitsModalVisible(false)}
+            >
+              <Text style={styles.setupButtonText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -974,11 +1221,111 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
+  categoryLimitsCard: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+  },
+  categoryLimitsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  categoryLimitItem: {
+    marginBottom: 15,
+  },
+  categoryLimitInfo: {
+    marginBottom: 5,
+  },
+  categoryLimitName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  categoryLimitAmount: {
+    fontSize: 12,
+    color: '#666',
+  },
+  categoryLimitProgressContainer: {
+    height: 8,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  categoryLimitProgress: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  noCategoryLimitsText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  categoryLimitEditItem: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderColor: '#e0e0e0',
+    borderWidth: 1,
+  },
+  categoryLimitEditInfo: {
+    flex: 1,
+  },
+  categoryLimitEditName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 3,
+  },
+  categoryLimitEditCurrent: {
+    fontSize: 12,
+    color: '#666',
+  },
+  categoryLimitEditControls: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  categoryLimitSetButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  categoryLimitSetButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  categoryLimitDeleteButton: {
+    backgroundColor: '#FF6B6B',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  categoryLimitDeleteButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   reactLogo: {
     height: 178,
     width: 290,
-    bottom: 0,
-    left: 0,
+    top: 10,
+    left: '50%',
+    marginLeft: -145,
     position: 'absolute',
   },
 });
